@@ -45,6 +45,22 @@ label {
   margin-bottom: 8px;
 }
 
+.mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+select {
+  border-radius: 10px;
+  border: 1px solid #c8ccd4;
+  padding: 8px 12px;
+  font-weight: 600;
+  background: #ffffff;
+}
+
 textarea {
   width: 100%;
   border-radius: 10px;
@@ -87,6 +103,11 @@ textarea {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  background: #e7ebf1;
+  color: #2f3a44;
+}
+
+.status-pill.neutral {
   background: #e7ebf1;
   color: #2f3a44;
 }

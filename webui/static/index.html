@@ -15,6 +15,13 @@
       </header>
 
       <section class="panel">
+        <div class="mode-row">
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="ping">Ping (ICMP)</option>
+            <option value="http" selected>HTTP (URL)</option>
+          </select>
+        </div>
         <label for="targets">Targets (one per line)</label>
         <textarea id="targets" rows="8" placeholder="1.1.1.1&#10;example.com"></textarea>
         <div class="actions">
@@ -39,10 +46,11 @@
           <table id="results-table">
             <thead>
               <tr>
-                <th>Host</th>
-                <th>Loss</th>
-                <th>Avg ms</th>
-                <th>Status</th>
+                <th id="col-target">Target</th>
+                <th id="col-status">Status</th>
+                <th id="col-code">Code</th>
+                <th id="col-latency">Latency</th>
+                <th id="col-error">Error</th>
               </tr>
             </thead>
             <tbody></tbody>
