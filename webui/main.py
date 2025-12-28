@@ -17,13 +17,37 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from webui.storage import Storage
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 SCRIPT_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "ping_sweep.sh"))
+DB_PATH = os.path.join(BASE_DIR, "pingsweep.db")
+
+storage = Storage(DB_PATH)
+DEFAULT_SERVICES = [
+    "https://google.com",
+    "https://youtube.com",
+    "https://facebook.com",
+    "https://instagram.com",
+    "https://wikipedia.org",
+    "https://amazon.com",
+    "https://microsoft.com",
+    "https://apple.com",
+    "https://cloudflare.com",
+    "https://github.com",
+]
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.on_event("startup")
+def ensure_default_services() -> None:
+    if storage.count_services() == 0:
+        for url in DEFAULT_SERVICES:
+            storage.insert_service(url)
 
 RUN_PROCESSES: dict[str, subprocess.Popen[str] | None] = {}
 RUN_CANCELLED: dict[str, bool] = {}
@@ -36,6 +60,20 @@ class RunRequest(BaseModel):
 
 class CancelRequest(BaseModel):
     run_id: str
+
+
+class ServiceOverviewItem(BaseModel):
+    service: str
+    latest_status: str
+    uptime_pct: int
+    avg_latency_ms: int | None
+    latest_latency_ms: int | None
+    last_checked_at: str | None
+    latencies: List[int | None]
+
+
+class ServiceOverviewResponse(BaseModel):
+    services: List[ServiceOverviewItem]
 
 
 def _clean_targets(raw_targets: List[str]) -> List[str]:
@@ -142,6 +180,18 @@ def _http_check(url: str, timeout: float = 5.0) -> dict:
     }
 
 
+def _http_status_label(ok: bool, latency_ms: int | None) -> str:
+    if not ok:
+        return "DOWN"
+    if latency_ms is not None and latency_ms >= 1000:
+        return "DEGRADED"
+    return "UP"
+
+
+# Manual test:
+# curl -s "http://127.0.0.1:8000/api/http/history?url=https%3A%2F%2Fgoogle.com&limit=5"
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -153,6 +203,7 @@ def run_sweep(payload: RunRequest):
         raise HTTPException(status_code=400, detail="JSON output must be enabled")
 
     targets = _clean_targets(payload.targets)
+    storage.set_last_inputs("ping", "\n".join(targets))
 
     if not os.path.isfile(SCRIPT_PATH):
         raise HTTPException(status_code=500, detail="ping_sweep.sh not found")
@@ -203,9 +254,11 @@ def run_sweep(payload: RunRequest):
 def run_http_stream(urls: str = Query(..., description="URLs separated by newlines")):
     raw_urls = urls.splitlines()
     clean_urls = _clean_urls(raw_urls)
+    storage.set_last_inputs("http", "\n".join(clean_urls))
 
     def event_stream():
         run_id = uuid4().hex
+        sweep_id = storage.create_sweep("http")
         RUN_PROCESSES[run_id] = None
         RUN_CANCELLED[run_id] = False
 
@@ -229,6 +282,18 @@ def run_http_stream(urls: str = Query(..., description="URLs separated by newlin
                 )
 
                 result = _http_check(url)
+                status_label = _http_status_label(result["ok"], result["latency_ms"])
+                service_id = storage.get_or_create_service(url)
+                storage.insert_check(
+                    service_id=service_id,
+                    sweep_id=sweep_id,
+                    ok=result["ok"],
+                    status=status_label,
+                    status_code=result["status_code"],
+                    latency_ms=result["latency_ms"],
+                    error=result["error"],
+                )
+                print(f"history: inserted check url={url} status={status_label}")
                 checked += 1
                 if result["ok"]:
                     reachable += 1
@@ -237,6 +302,7 @@ def run_http_stream(urls: str = Query(..., description="URLs separated by newlin
                 yield _sse("result", json.dumps(result))
 
             duration_ms = int((time.monotonic() - start) * 1000)
+            storage.update_sweep(sweep_id, checked=checked, up=reachable, down=failed, duration_ms=duration_ms)
             summary = {
                 "type": "summary",
                 "checked": checked,
@@ -250,6 +316,52 @@ def run_http_stream(urls: str = Query(..., description="URLs separated by newlin
             RUN_CANCELLED.pop(run_id, None)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/http/sweeps")
+def http_sweeps(limit: int = Query(10, ge=1, le=50)):
+    return {"sweeps": list(storage.fetch_sweeps(limit))}
+
+
+@app.get("/api/http/health")
+def http_health(limit_sweeps: int = Query(10, ge=1, le=50)):
+    return {"services": list(storage.fetch_health(limit_sweeps))}
+
+
+@app.get("/api/http/overview", response_model=ServiceOverviewResponse)
+def http_overview(limit: int = Query(10, ge=1, le=50)):
+    return {"services": storage.fetch_http_overview(limit)}
+
+
+@app.get("/api/services")
+def http_services(limit: int = Query(50, ge=1, le=200)):
+    return {"services": list(storage.fetch_services(limit))}
+
+
+@app.get("/api/last-inputs")
+def last_inputs():
+    last = storage.get_last_inputs()
+    if not last:
+        return {"mode": "http", "targets": "", "ts": None}
+    return last
+
+
+@app.get("/api/http/history")
+def http_history(url: str = Query(...), limit: int = Query(30, ge=1, le=200)):
+    normalized = _normalize_url(url)
+    rows = list(storage.fetch_history(normalized, limit))
+    print(f"history: fetch url={normalized} limit={limit} rows={len(rows)}")
+    trimmed = [
+        {
+            "ts": row["ts"],
+            "status": row["status"],
+            "latency_ms": row["latency_ms"],
+            "status_code": row["status_code"],
+            "error": row["error"],
+        }
+        for row in rows
+    ]
+    return {"url": normalized, "checks": trimmed}
 
 
 @app.get("/api/run/stream")

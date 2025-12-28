@@ -10,8 +10,8 @@
   <body>
     <main class="container">
       <header>
-        <h1>Ping Sweep</h1>
-        <p>Paste targets to run a quick sweep using the local script.</p>
+        <h1>Service Health Monitor</h1>
+        <p>Run quick checks against URLs or ICMP targets and review recent health.</p>
       </header>
 
       <section class="panel">
@@ -23,10 +23,13 @@
           </select>
         </div>
         <label for="targets">Targets (one per line)</label>
+        <div id="default-hint" class="hint"></div>
         <textarea id="targets" rows="8" placeholder="1.1.1.1&#10;example.com"></textarea>
+        <div id="last-loaded" class="history-meta"></div>
         <div class="actions">
           <button id="run" type="button">Run Sweep</button>
           <button id="cancel" type="button" class="ghost hidden">Cancel</button>
+          <button id="copy-report" type="button" class="ghost">Copy Report</button>
         </div>
         <div class="status-line">
           <span id="status" class="status-pill neutral">Idle</span>
@@ -55,6 +58,27 @@
             </thead>
             <tbody></tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Service Health Overview (last 10 checks)</h2>
+        <div id="overview-empty" class="summary">Run a sweep to populate overview.</div>
+        <div id="overview-grid" class="overview-grid"></div>
+      </section>
+
+      <section class="panel">
+        <h2>History</h2>
+        <div id="history-empty" class="summary">Run a sweep to populate history.</div>
+        <div class="history-grid">
+          <div>
+            <h3>Recent sweeps</h3>
+            <div id="sweep-list" class="history-list"></div>
+          </div>
+          <div>
+            <h3>Service health (last 10 checks)</h3>
+            <div id="health-list" class="history-list"></div>
+          </div>
         </div>
       </section>
     </main>

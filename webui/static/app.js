@@ -14,6 +14,14 @@ const colLatency = document.getElementById("col-latency");
 const colError = document.getElementById("col-error");
 const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
+const overviewEmpty = document.getElementById("overview-empty");
+const overviewGrid = document.getElementById("overview-grid");
+const historyEmpty = document.getElementById("history-empty");
+const sweepList = document.getElementById("sweep-list");
+const healthList = document.getElementById("health-list");
+const lastLoadedEl = document.getElementById("last-loaded");
+const defaultHintEl = document.getElementById("default-hint");
+const copyReportButton = document.getElementById("copy-report");
 
 let activeSource = null;
 let timerId = null;
@@ -50,6 +58,21 @@ function updateModeUI() {
   }
 }
 
+function formatRelativeTime(isoString) {
+  const time = Date.parse(isoString);
+  if (Number.isNaN(time)) {
+    return "unknown";
+  }
+  const delta = Math.max(0, Date.now() - time);
+  const minutes = Math.floor(delta / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function resetResults() {
   tableBody.innerHTML = "";
   summaryEl.textContent = "";
@@ -57,6 +80,138 @@ function resetResults() {
   progressText.textContent = "";
   elapsedEl.textContent = "0.0s";
   currentHostEl.textContent = "";
+}
+
+function renderDashboardEmpty() {
+  historyEmpty.textContent = "Run a sweep to populate history.";
+  sweepList.innerHTML = "";
+  healthList.innerHTML = "";
+}
+
+function renderOverviewEmpty(message) {
+  overviewEmpty.textContent = message;
+  overviewEmpty.classList.remove("hidden");
+  overviewGrid.innerHTML = "";
+}
+
+function overviewStatusClass(status) {
+  if (status === "UP") return "ok";
+  if (status === "DOWN") return "loss";
+  if (status === "DEGRADED") return "pending";
+  return "pending";
+}
+
+function buildSparkline(latencies, statusClass) {
+  const width = 160;
+  const height = 44;
+  const padding = 4;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("class", `sparkline ${statusClass}`);
+  svg.setAttribute("aria-hidden", "true");
+
+  const values = latencies.filter((value) => typeof value === "number" && Number.isFinite(value));
+  const hasValues = values.length > 0;
+  const min = hasValues ? Math.min(...values) : 0;
+  const max = hasValues ? Math.max(...values) : 0;
+  const flatLine = !hasValues || min === max;
+  const baseline = Math.round(height / 2);
+
+  const scaleY = (value) => {
+    if (flatLine) return baseline;
+    const ratio = (value - min) / (max - min);
+    return Math.round(height - padding - ratio * (height - padding * 2));
+  };
+
+  const pointsTotal = latencies.length;
+  const step = pointsTotal > 1 ? width / (pointsTotal - 1) : 0;
+  const segments = [];
+  let current = [];
+
+  latencies.forEach((value, index) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      if (current.length) {
+        segments.push(current);
+        current = [];
+      }
+      return;
+    }
+    const x = pointsTotal > 1 ? index * step : width / 2;
+    const y = scaleY(value);
+    current.push(`${x.toFixed(2)},${y.toFixed(2)}`);
+  });
+
+  if (current.length) {
+    segments.push(current);
+  }
+
+  if (segments.length === 0) {
+    segments.push([`0,${baseline}`, `${width},${baseline}`]);
+  }
+
+  segments.forEach((points) => {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("points", points.join(" "));
+    svg.appendChild(line);
+  });
+
+  return svg;
+}
+
+function renderOverview(services) {
+  overviewGrid.innerHTML = "";
+  services.forEach((service) => {
+    const card = document.createElement("div");
+    card.className = "overview-card";
+
+    const header = document.createElement("div");
+    header.className = "overview-header-row";
+
+    const name = document.createElement("div");
+    name.className = "overview-service";
+    name.textContent = service.service;
+
+    const statusWrap = document.createElement("div");
+    statusWrap.className = "overview-status";
+    const statusLabel = service.latest_status || "UNKNOWN";
+    const statusClass = overviewStatusClass(statusLabel);
+
+    const dot = document.createElement("span");
+    dot.className = `status-dot ${statusClass}`;
+
+    const pill = document.createElement("span");
+    pill.className = `pill ${statusClass} tiny`;
+    pill.textContent = statusLabel;
+
+    statusWrap.appendChild(dot);
+    statusWrap.appendChild(pill);
+    header.appendChild(name);
+    header.appendChild(statusWrap);
+
+    const latencies = Array.isArray(service.latencies) ? service.latencies : [];
+    const sparkline = buildSparkline(latencies, statusClass);
+
+    const avgLatency = service.avg_latency_ms === null || service.avg_latency_ms === undefined
+      ? "NA"
+      : String(service.avg_latency_ms);
+    const meta = document.createElement("div");
+    meta.className = "overview-meta";
+    meta.textContent = `${service.uptime_pct}% uptime • avg ${avgLatency} ms`;
+
+    const time = document.createElement("div");
+    time.className = "overview-time";
+    if (service.last_checked_at) {
+      time.textContent = `Last checked ${formatRelativeTime(service.last_checked_at)} ago`;
+    } else {
+      time.textContent = "Last checked unknown";
+    }
+
+    card.appendChild(header);
+    card.appendChild(sparkline);
+    card.appendChild(meta);
+    card.appendChild(time);
+    overviewGrid.appendChild(card);
+  });
 }
 
 function formatLoss(loss) {
@@ -130,6 +285,9 @@ function updateRow(row) {
   const pill = document.createElement("span");
   pill.className = `pill ${statusClass}`;
   pill.textContent = statusLabel;
+  if (statusLabel === "UP") pill.textContent = "✓ UP";
+  if (statusLabel === "DOWN") pill.textContent = "✕ DOWN";
+  if (statusLabel === "DEGRADED") pill.textContent = "△ DEGRADED";
   cells[1].appendChild(pill);
   cells[2].textContent = code;
   cells[3].textContent = latency;
@@ -155,11 +313,234 @@ function updatePendingRow(target) {
   cells[1].innerHTML = "";
   const pill = document.createElement("span");
   pill.className = "pill pending";
-  pill.textContent = "PENDING";
+  pill.textContent = "… PENDING";
   cells[1].appendChild(pill);
   cells[2].textContent = "-";
   cells[3].textContent = "-";
   cells[4].textContent = "-";
+}
+
+function renderSweeps(sweeps) {
+  sweepList.innerHTML = "";
+  if (!sweeps.length) {
+    const item = document.createElement("div");
+    item.className = "history-meta";
+    item.textContent = "No sweeps yet.";
+    sweepList.appendChild(item);
+    return;
+  }
+  sweeps.forEach((sweep) => {
+    const item = document.createElement("div");
+    item.className = "history-item";
+    const title = document.createElement("h4");
+    title.textContent = `${formatRelativeTime(sweep.ts)} · ${sweep.checked} checked`;
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = `Up ${sweep.up} · Down ${sweep.down} · ${sweep.duration_ms} ms`;
+    item.appendChild(title);
+    item.appendChild(meta);
+    sweepList.appendChild(item);
+  });
+}
+
+function renderHealth(services) {
+  healthList.innerHTML = "";
+  if (!services.length) {
+    const item = document.createElement("div");
+    item.className = "history-meta";
+    item.textContent = "No services yet.";
+    healthList.appendChild(item);
+    return;
+  }
+  services.forEach((service) => {
+    const item = document.createElement("div");
+    item.className = "history-item";
+
+    const title = document.createElement("h4");
+    title.textContent = service.url;
+
+    const status = document.createElement("span");
+    const statusLabel = service.last_status || "UNKNOWN";
+    let statusClass = "pill pending";
+    if (statusLabel === "UP") statusClass = "pill ok";
+    if (statusLabel === "DOWN") statusClass = "pill loss";
+    status.className = `${statusClass} tiny`;
+    status.textContent = statusLabel;
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    const avgLatency = service.avg_latency_ms === null ? "NA" : `${service.avg_latency_ms} ms`;
+    meta.textContent = `${service.uptime_pct}% uptime · Avg ${avgLatency}`;
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.appendChild(title);
+    header.appendChild(status);
+
+    item.appendChild(header);
+    item.appendChild(meta);
+
+    if (service.last_statuses && service.last_statuses.length) {
+      const row = document.createElement("div");
+      row.className = "history-status-row";
+      service.last_statuses.forEach((statusValue) => {
+        const pill = document.createElement("span");
+        let className = "pill loss tiny";
+        if (statusValue === "UP") className = "pill ok tiny";
+        if (statusValue === "DEGRADED") className = "pill pending tiny";
+        pill.className = className;
+        pill.textContent = statusValue;
+        row.appendChild(pill);
+      });
+      item.appendChild(row);
+    }
+
+    healthList.appendChild(item);
+  });
+}
+
+async function refreshOverview() {
+  if (modeSelect.value !== "http") {
+    renderOverviewEmpty("Switch to HTTP mode to view overview.");
+    return;
+  }
+  try {
+    const response = await fetch("/api/http/overview?limit=10");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error("Failed to load overview");
+    }
+    const services = data.services || [];
+    if (!services.length) {
+      renderOverviewEmpty("Run a sweep to populate overview.");
+      return;
+    }
+    overviewEmpty.textContent = "";
+    overviewEmpty.classList.add("hidden");
+    renderOverview(services);
+  } catch (error) {
+    renderOverviewEmpty("Overview unavailable.");
+  }
+}
+
+async function refreshDashboard() {
+  if (modeSelect.value !== "http") {
+    renderDashboardEmpty();
+    renderOverviewEmpty("Switch to HTTP mode to view overview.");
+    return;
+  }
+  refreshOverview();
+  try {
+    const [sweepsResponse, healthResponse] = await Promise.all([
+      fetch("/api/http/sweeps?limit=10"),
+      fetch("/api/http/health?limit_sweeps=10"),
+    ]);
+    const sweepsData = await sweepsResponse.json();
+    const healthData = await healthResponse.json();
+    if (!sweepsResponse.ok || !healthResponse.ok) {
+      throw new Error("Failed to load dashboard");
+    }
+    const sweeps = sweepsData.sweeps || [];
+    const services = healthData.services || [];
+    if (!sweeps.length && !services.length) {
+      renderDashboardEmpty();
+      return;
+    }
+    historyEmpty.textContent = "";
+    renderSweeps(sweeps);
+    renderHealth(services);
+  } catch (error) {
+    renderDashboardEmpty();
+  }
+}
+
+async function loadLastInputs() {
+  try {
+    const response = await fetch("/api/last-inputs");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error("Failed to load last inputs");
+    }
+    if (data.mode) {
+      modeSelect.value = data.mode;
+      updateModeUI();
+    }
+    if (typeof data.targets === "string") {
+      targetsInput.value = data.targets;
+    }
+    if (data.targets && data.ts) {
+      lastLoadedEl.textContent = `Loaded last targets from ${formatRelativeTime(data.ts)}.`;
+      defaultHintEl.textContent = "";
+    } else {
+      lastLoadedEl.textContent = "";
+    }
+  } catch (error) {
+    lastLoadedEl.textContent = "";
+  }
+}
+
+async function loadDefaultServices() {
+  try {
+    const response = await fetch("/api/services?limit=10");
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error("Failed to load services");
+    }
+    if (targetsInput.value.trim().length > 0) {
+      return;
+    }
+    const services = data.services || [];
+    if (services.length === 0) {
+      return;
+    }
+    const urls = services.map((service) => service.url).filter(Boolean);
+    if (urls.length) {
+      modeSelect.value = "http";
+      updateModeUI();
+      targetsInput.value = urls.join("\n");
+      defaultHintEl.textContent = "Default top sites loaded — edit this list anytime.";
+    }
+  } catch (error) {
+    defaultHintEl.textContent = "";
+  }
+}
+
+async function initializeInputs() {
+  await loadLastInputs();
+  await loadDefaultServices();
+}
+
+function buildReportText() {
+  const rows = Array.from(tableBody.querySelectorAll("tr"));
+  if (!rows.length) {
+    return "";
+  }
+  const header = modeSelect.value === "http"
+    ? "URL\tSTATUS\tCODE\tLATENCY\tERROR"
+    : "HOST\tSTATUS\tLOSS\tLATENCY\tERROR";
+  const lines = rows.map((row) => {
+    const cells = Array.from(row.querySelectorAll("td")).map((cell) =>
+      cell.textContent.trim().replace(/\s+/g, " ")
+    );
+    return cells.join("\t");
+  });
+  return [header, ...lines].join("\n");
+}
+
+async function copyReport() {
+  const report = buildReportText();
+  if (!report) {
+    setStatus("Nothing to copy", "neutral");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(report);
+    setStatus("Report copied", "ok");
+  } catch (error) {
+    setStatus("Copy failed", "error");
+  }
 }
 
 function closeActiveSource() {
@@ -262,6 +643,7 @@ function runSweep() {
     stopTimer();
     runButton.disabled = false;
     cancelButton.classList.add("hidden");
+    refreshDashboard();
   });
 
   source.addEventListener("error", (event) => {
@@ -305,10 +687,14 @@ async function cancelRun() {
 
 runButton.addEventListener("click", runSweep);
 cancelButton.addEventListener("click", cancelRun);
+copyReportButton.addEventListener("click", copyReport);
 modeSelect.addEventListener("change", () => {
   updateModeUI();
   resetResults();
   setStatus("Idle", "neutral");
+  refreshDashboard();
 });
 
 updateModeUI();
+refreshDashboard();
+initializeInputs();
