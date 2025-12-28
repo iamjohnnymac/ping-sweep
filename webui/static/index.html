@@ -62,20 +62,19 @@
       </section>
 
       <section class="panel">
-        <h2>Service Health Overview (last 10 checks)</h2>
-        <div id="overview-empty" class="summary">Run a sweep to populate overview.</div>
-        <div id="overview-grid" class="overview-grid"></div>
-      </section>
-
-      <section class="panel">
         <h2>History</h2>
         <div id="history-empty" class="summary">Run a sweep to populate history.</div>
-        <div class="history-grid">
-          <div>
+        <div class="history-stack">
+          <div id="overview-panel" class="history-section">
+            <h3>Service Health Overview (last 10 checks)</h3>
+            <div id="overview-empty" class="summary">Run a sweep to populate overview.</div>
+            <div id="overview-grid" class="overview-grid"></div>
+          </div>
+          <div class="history-section">
             <h3>Recent sweeps</h3>
             <div id="sweep-list" class="history-list"></div>
           </div>
-          <div>
+          <div class="history-section">
             <h3>Service health (last 10 checks)</h3>
             <div id="health-list" class="history-list"></div>
           </div>
