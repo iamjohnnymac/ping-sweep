@@ -11,6 +11,8 @@ This project reads hosts from `targets.txt`, pings each host, and writes a CSV r
 ./ping_sweep.sh
 ```
 
+This prints a readable table to stdout for quick inspection while also writing `results.csv`.
+
 ## Options
 - `-c <count>` — number of pings per host (default: 3).
 - `--json` — write `results.json` alongside the CSV output.
@@ -25,6 +27,9 @@ Examples:
 ```
 
 ## Output
+Human-friendly table output is intended for interactive use (TTY). It uses color and simple symbols to highlight success or loss; when stdout is not a TTY, it falls back to plain text.
+Use `results.csv` and `results.json` for automation and machine parsing.
+
 CSV columns in `results.csv`:
 
 - `host` — target hostname or IP.
@@ -32,6 +37,12 @@ CSV columns in `results.csv`:
 - `avg_latency_ms` — average round-trip time in milliseconds, or `NA` if unavailable.
 
 JSON output in `results.json` (when enabled) mirrors the same fields.
+
+To validate JSON output:
+
+```bash
+python3 -m json.tool results.json
+```
 
 ## Sample targets.txt
 ```
