@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ping Sweep</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Ping Sweep</h1>
+        <p>Paste targets to run a quick sweep using the local script.</p>
+      </header>
+
+      <section class="panel">
+        <label for="targets">Targets (one per line)</label>
+        <textarea id="targets" rows="8" placeholder="1.1.1.1&#10;example.com"></textarea>
+        <div class="actions">
+          <button id="run" type="button">Run Sweep</button>
+          <button id="cancel" type="button" class="ghost hidden">Cancel</button>
+        </div>
+        <div class="status-line">
+          <span id="status" class="status-pill neutral">Idle</span>
+          <span id="elapsed" class="status-meta">0.0s</span>
+          <span id="current-host" class="status-meta"></span>
+        </div>
+        <div class="progress" aria-hidden="true">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+        <div id="progress-text" class="progress-text"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Results</h2>
+        <div id="summary" class="summary"></div>
+        <div class="table-wrap">
+          <table id="results-table">
+            <thead>
+              <tr>
+                <th>Host</th>
+                <th>Loss</th>
+                <th>Avg ms</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

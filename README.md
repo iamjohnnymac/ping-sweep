@@ -44,6 +44,22 @@ To validate JSON output:
 python3 -m json.tool results.json
 ```
 
+## Web UI
+Start the local UI with:
+
+```bash
+uvicorn webui.main:app --reload
+```
+
+The UI uses the JSON output path. `POST /api/run` expects:
+
+```json
+{
+  "targets": ["1.1.1.1", "example.com"],
+  "json_output": true
+}
+```
+
 ## Sample targets.txt
 ```
 # Example hosts

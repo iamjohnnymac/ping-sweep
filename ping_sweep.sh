@@ -2,11 +2,12 @@
 
 set -eu
 
-INPUT_FILE="targets.txt"
+TARGETS_FILE="targets.txt"
 OUTPUT_FILE="results.csv"
 JSON_FILE="results.json"
 COUNT=3
 JSON_OUTPUT=0
+STREAM=0
 TIMEOUT_SECONDS=1
 USE_COLOR=0
 
@@ -29,6 +30,10 @@ fi
 CHECK="✓"
 CROSS="✗"
 
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
 print_table_header() {
   printf '%s%-24s %-7s %-10s %s%s\n' "$BOLD" "HOST" "LOSS" "AVG_MS" "ST" "$RESET"
   printf '%-24s %-7s %-10s %s\n' "----" "----" "------" "--"
@@ -46,11 +51,13 @@ print_table_row() {
 
 usage() {
   cat <<'USAGE'
-Usage: ./ping_sweep.sh [-c count] [--json]
+Usage: ./ping_sweep.sh [-c count] [--json] [--stream] [--targets file]
 
 Options:
   -c <count>  Number of pings per host (default: 3)
   --json      Write results.json alongside results.csv
+  --stream    Emit JSON Lines results to stdout
+  --targets   Read targets from a custom file
   -h, --help  Show this help text
 USAGE
 }
@@ -67,6 +74,17 @@ while [ "$#" -gt 0 ]; do
       ;;
     --json)
       JSON_OUTPUT=1
+      ;;
+    --stream)
+      STREAM=1
+      ;;
+    --targets)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "Missing value for --targets" >&2
+        exit 1
+      fi
+      TARGETS_FILE="$1"
       ;;
     -h|--help)
       usage
@@ -92,8 +110,8 @@ case "$COUNT" in
     ;;
  esac
 
-if [ ! -f "$INPUT_FILE" ]; then
-  echo "Missing $INPUT_FILE. Create it with one host per line." >&2
+if [ ! -f "$TARGETS_FILE" ]; then
+  echo "Missing $TARGETS_FILE. Create it with one host per line." >&2
   exit 1
 fi
 
@@ -104,10 +122,15 @@ if [ "$JSON_OUTPUT" -eq 1 ]; then
   first_json=1
 fi
 
-print_table_header
+if [ "$STREAM" -eq 0 ]; then
+  print_table_header
+fi
 total_hosts=0
 ok_hosts=0
 loss_hosts=0
+start_seconds=$(date +%s)
+total_targets=$(awk 'NF && $0 !~ /^#/' "$TARGETS_FILE" | wc -l | tr -d ' ')
+index=0
 
 while IFS= read -r host; do
   case "$host" in
@@ -115,6 +138,13 @@ while IFS= read -r host; do
       continue
       ;;
   esac
+
+  index=$((index + 1))
+  if [ "$STREAM" -eq 1 ]; then
+    json_host=$(json_escape "$host")
+    printf '{"type":"progress","current":"%s","index":%s,"total":%s}\n' \
+      "$json_host" "$index" "$total_targets"
+  fi
 
   ping_output=$(ping -c "$COUNT" -q -W "$TIMEOUT_SECONDS" -w "$((COUNT + 2))" "$host" 2>&1 || true)
 
@@ -131,18 +161,16 @@ while IFS= read -r host; do
   echo "$host,$loss,$avg" >> "$OUTPUT_FILE"
 
   total_hosts=$((total_hosts + 1))
-  status="OK"
-  color_code="$GREEN"
-  case "$loss" in
-    0%|0.0%)
-      status="OK"
-      color_code="$GREEN"
-      ;;
-    *)
-      status="LOSS"
-      color_code="$RED"
-      ;;
-  esac
+  loss_num=$(printf '%s' "$loss" | tr -d '%' | awk '{printf "%d", $1 + 0}')
+  status="LOSS"
+  if [ "$loss_num" -eq 0 ]; then
+    status="OK"
+  fi
+  if [ "$status" = "OK" ]; then
+    color_code="$GREEN"
+  else
+    color_code="$RED"
+  fi
 
   case "$status" in
     OK)
@@ -155,7 +183,18 @@ while IFS= read -r host; do
       ;;
   esac
 
-  print_table_row "$host" "$loss" "$avg" "$symbol" "$color_code"
+  if [ "$STREAM" -eq 0 ]; then
+    print_table_row "$host" "$loss" "$avg" "$symbol" "$color_code"
+  else
+    if [ "$avg" = "NA" ]; then
+      avg_json="null"
+    else
+      avg_json="$avg"
+    fi
+    json_host=$(json_escape "$host")
+    printf '{"type":"result","host":"%s","loss":%s,"avg_ms":%s,"status":"%s"}\n' \
+      "$json_host" "$loss_num" "$avg_json" "$status"
+  fi
 
   if [ "$JSON_OUTPUT" -eq 1 ]; then
     if [ "$first_json" -eq 1 ]; then
@@ -169,15 +208,25 @@ while IFS= read -r host; do
       "$sep" "$host" "$loss" "$avg" >> "$JSON_FILE"
   fi
 
-done < "$INPUT_FILE"
+done < "$TARGETS_FILE"
 
 if [ "$JSON_OUTPUT" -eq 1 ]; then
   printf '\n]\n' >> "$JSON_FILE"
 fi
 
-printf '%sSummary:%s %s checked, %s reachable, %s failed\n' "$BOLD" "$RESET" "$total_hosts" "$ok_hosts" "$loss_hosts"
+end_seconds=$(date +%s)
+duration_ms=$(( (end_seconds - start_seconds) * 1000 ))
 
-echo "Wrote $OUTPUT_FILE"
-if [ "$JSON_OUTPUT" -eq 1 ]; then
-  echo "Wrote $JSON_FILE"
+if [ "$STREAM" -eq 0 ]; then
+  printf '%sSummary:%s %s checked, %s reachable, %s failed\n' "$BOLD" "$RESET" "$total_hosts" "$ok_hosts" "$loss_hosts"
+else
+  printf '{"type":"summary","checked":%s,"reachable":%s,"failed":%s,"duration_ms":%s}\n' \
+    "$total_hosts" "$ok_hosts" "$loss_hosts" "$duration_ms"
+fi
+
+if [ "$STREAM" -eq 0 ]; then
+  echo "Wrote $OUTPUT_FILE"
+  if [ "$JSON_OUTPUT" -eq 1 ]; then
+    echo "Wrote $JSON_FILE"
+  fi
 fi
