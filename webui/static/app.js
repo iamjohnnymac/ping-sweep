@@ -16,6 +16,7 @@ const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
 const overviewEmpty = document.getElementById("overview-empty");
 const overviewGrid = document.getElementById("overview-grid");
+const overviewPanel = document.getElementById("overview-panel");
 const historyEmpty = document.getElementById("history-empty");
 const sweepList = document.getElementById("sweep-list");
 const healthList = document.getElementById("health-list");
@@ -56,6 +57,7 @@ function updateModeUI() {
     colLatency.textContent = "Avg ms";
     colError.textContent = "Error";
   }
+  overviewPanel.classList.toggle("hidden", modeSelect.value !== "http");
 }
 
 function formatRelativeTime(isoString) {
@@ -354,9 +356,13 @@ function renderHealth(services) {
   }
   services.forEach((service) => {
     const item = document.createElement("div");
-    item.className = "history-item";
+    item.className = "history-item health-card";
+
+    const header = document.createElement("div");
+    header.className = "health-header";
 
     const title = document.createElement("h4");
+    title.className = "health-title";
     title.textContent = service.url;
 
     const status = document.createElement("span");
@@ -364,20 +370,16 @@ function renderHealth(services) {
     let statusClass = "pill pending";
     if (statusLabel === "UP") statusClass = "pill ok";
     if (statusLabel === "DOWN") statusClass = "pill loss";
-    status.className = `${statusClass} tiny`;
+    status.className = `${statusClass} health-status`;
     status.textContent = statusLabel;
 
-    const meta = document.createElement("div");
-    meta.className = "history-meta";
-    const avgLatency = service.avg_latency_ms === null ? "NA" : `${service.avg_latency_ms} ms`;
-    meta.textContent = `${service.uptime_pct}% uptime · Avg ${avgLatency}`;
-
-    const header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.justifyContent = "space-between";
-    header.style.alignItems = "center";
     header.appendChild(title);
     header.appendChild(status);
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta health-meta";
+    const avgLatency = service.avg_latency_ms === null ? "NA" : `${service.avg_latency_ms} ms`;
+    meta.textContent = `${service.uptime_pct}% uptime · Avg ${avgLatency}`;
 
     item.appendChild(header);
     item.appendChild(meta);

@@ -362,6 +362,7 @@ class Storage:
             degraded = int(row["degraded"] or 0)
             avg_latency = row["avg_latency_ms"]
             uptime_pct = round((up / checks) * 100) if checks else 0
+            error_count = down + degraded
 
             status_rows = list(
                 self.conn.execute(
@@ -389,8 +390,20 @@ class Storage:
                     "last_status": last_status_map.get(row["last_check_id"], "UNKNOWN"),
                     "avg_latency_ms": round(avg_latency) if avg_latency is not None else None,
                     "last_statuses": last_statuses,
+                    "_error_count": error_count,
                 }
             )
+
+        status_rank = {"DOWN": 0, "DEGRADED": 1, "UP": 2}
+        results.sort(
+            key=lambda item: (
+                status_rank.get(item["last_status"], 3),
+                -int(item["_error_count"]),
+                -(item["avg_latency_ms"] if item["avg_latency_ms"] is not None else -1),
+            )
+        )
+        for item in results:
+            item.pop("_error_count", None)
         return results
 
     def set_last_inputs(self, mode: str, targets: str) -> None:

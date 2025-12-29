@@ -261,10 +261,11 @@ tr.loss td:last-child {
 .overview-card {
   border: 1px solid #e1e5ec;
   border-radius: 12px;
-  padding: 14px;
+  padding: 16px;
   background: #f8f9fb;
   display: grid;
   gap: 10px;
+  box-shadow: 0 10px 22px rgba(15, 18, 23, 0.08);
 }
 
 .overview-header-row {
@@ -285,6 +286,12 @@ tr.loss td:last-child {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.overview-status .pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  font-weight: 700;
 }
 
 .status-dot {
@@ -360,14 +367,13 @@ tr.loss td:last-child {
   margin-top: 10px;
 }
 
-.history-grid {
+.history-stack {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
   margin-top: 12px;
 }
 
-.history-grid h3 {
+.history-section h3 {
   margin: 0 0 8px;
   font-size: 14px;
   color: #3f4852;
@@ -381,8 +387,9 @@ tr.loss td:last-child {
 .history-item {
   border: 1px solid #e1e5ec;
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 14px 16px;
   background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 18, 23, 0.06);
 }
 
 .history-item h4 {
@@ -393,6 +400,36 @@ tr.loss td:last-child {
 .history-meta {
   font-size: 12px;
   color: #5a646f;
+}
+
+.health-card {
+  display: grid;
+  gap: 8px;
+}
+
+.health-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.health-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1b1f24;
+  word-break: break-word;
+}
+
+.health-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  font-weight: 700;
+}
+
+.health-meta {
+  font-weight: 600;
 }
 
 .history-status-row {
